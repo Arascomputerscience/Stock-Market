@@ -2,8 +2,9 @@ name: Trading Bot
 
 on:
   schedule:
-    - cron: "0 14 * * *"  # Runs daily at 14:00 UTC (~9 AM EST)
-  workflow_dispatch:
+    # Runs once per day at 14:00 UTC (~9 AM EST / 8 AM CST)
+    - cron: "0 14 * * *"
+  workflow_dispatch:  # allows manual run from GitHub
 
 jobs:
   run-bot:
@@ -16,11 +17,10 @@ jobs:
       - name: 🐍 Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
       - name: 📦 Install dependencies
         run: |
-          pip install --upgrade pip
           pip install alpaca-trade-api python-dotenv pandas
 
       - name: 🚀 Run Trading Bot
@@ -30,9 +30,3 @@ jobs:
           BASE_URL: https://paper-api.alpaca.markets
         run: |
           python Project.py
-
-      - name: 📤 Upload log file
-        uses: actions/upload-artifact@v3
-        with:
-          name: trading-logs
-          path: trading_log.txt

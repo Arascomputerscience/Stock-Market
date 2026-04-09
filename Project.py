@@ -51,20 +51,23 @@ class BST:
             else:
                 node.right = _insert(node.right, symbol, score)
             return node
+
         self.root = _insert(self.root, symbol, score)
 
     def get_descending(self):
         result = []
+
         def traverse(node):
             if not node:
                 return
             traverse(node.right)
             result.append(node.symbol)
             traverse(node.left)
+
         traverse(self.root)
         return result
 
-# ---------------- DATA ----------------
+# ---------------- DATA FUNCTIONS ----------------
 def get_last_n_days_prices(symbol, n=500):
     """Fetch up to n daily bars and return as a list"""
     try:
@@ -78,7 +81,9 @@ def get_last_n_days_prices(symbol, n=500):
         return []
 
 def moving_average(prices, window):
-    """Calculate MA, allow shorter lists if not enough data"""
+    """Calculate MA safely even if prices list is short or empty"""
+    if not prices:  # Guard against empty list
+        return 0
     if len(prices) < window:
         return sum(prices) / len(prices)
     return sum(prices[-window:]) / window
@@ -91,12 +96,12 @@ def run_bot():
     bst = BST()
     current_time = datetime.now()
 
-    # STEP 1–4: FETCH DATA & CALCULATE MOMENTUM
+    # STEP 1–4: DATA + METRICS
     for symbol in watchlist:
         print(f"Fetching data for {symbol}...")
         logging.info(f"Processing {symbol}")
 
-        prices = get_last_n_days_prices(symbol, n=500)
+        prices = get_last_n_days_prices(symbol, n=500)  # fetch as much as possible
         if not prices:
             msg = f"{symbol}: No price data"
             print(msg)
@@ -117,7 +122,7 @@ def run_bot():
 
         bst.insert(symbol, momentum)
 
-    # STEP 5: SORT STOCKS BY MOMENTUM
+    # STEP 5: SORT BY MOMENTUM
     sorted_stocks = bst.get_descending()
     print("\nRanked Stocks (by momentum):", sorted_stocks)
     logging.info(f"Sorted stocks: {sorted_stocks}")
@@ -145,8 +150,14 @@ def run_bot():
 
         short_ma = moving_average(prices, short_window)
         long_ma = moving_average(prices, long_window)
-        prev_short_ma = moving_average(prices[:-1], short_window)
-        prev_long_ma = moving_average(prices[:-1], long_window)
+
+        prev_prices = prices[:-1]
+        if prev_prices:
+            prev_short_ma = moving_average(prev_prices, short_window)
+            prev_long_ma = moving_average(prev_prices, long_window)
+        else:
+            prev_short_ma = short_ma
+            prev_long_ma = long_ma
 
         print(f"{symbol} Prev Short: {prev_short_ma:.2f}, Prev Long: {prev_long_ma:.2f}")
         print(f"{symbol} Curr Short: {short_ma:.2f}, Curr Long: {long_ma:.2f}")
@@ -183,7 +194,7 @@ def run_bot():
             print(f"{symbol}: HOLD")
             logging.info(f"{symbol}: HOLD")
 
-    # STEP 7: SUMMARY
+    # STEP 7: FINAL SUMMARY
     total_shares = sum(portfolio.values())
     print("\n--- FINAL SUMMARY ---")
     print("Portfolio:", portfolio)

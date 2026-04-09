@@ -38,7 +38,6 @@ class Node:
         self.left = None
         self.right = None
 
-
 class BST:
     def __init__(self):
         self.root = None
@@ -52,38 +51,36 @@ class BST:
             else:
                 node.right = _insert(node.right, symbol, score)
             return node
-
         self.root = _insert(self.root, symbol, score)
 
     def get_descending(self):
         result = []
-
         def traverse(node):
             if not node:
                 return
             traverse(node.right)
             result.append(node.symbol)
             traverse(node.left)
-
         traverse(self.root)
         return result
 
 # ---------------- DATA ----------------
-def get_last_200_days_prices(symbol):
+def get_last_n_days_prices(symbol, n=500):
+    """Fetch up to n daily bars and return as a list"""
     try:
-        bars = api.get_bars(symbol, "1Day", limit=250).df
-
+        bars = api.get_bars(symbol, "1Day", limit=n).df
         if bars.empty or "close" not in bars:
             logging.warning(f"{symbol}: No data returned")
             return []
-
         return bars["close"].dropna().tolist()
-
     except Exception as e:
         logging.error(f"{symbol}: Data fetch error - {e}")
         return []
 
 def moving_average(prices, window):
+    """Calculate MA, allow shorter lists if not enough data"""
+    if len(prices) < window:
+        return sum(prices) / len(prices)
     return sum(prices[-window:]) / window
 
 # ---------------- MAIN BOT ----------------
@@ -94,31 +91,33 @@ def run_bot():
     bst = BST()
     current_time = datetime.now()
 
-    # STEP 1–4: DATA + METRICS
+    # STEP 1–4: FETCH DATA & CALCULATE MOMENTUM
     for symbol in watchlist:
         print(f"Fetching data for {symbol}...")
         logging.info(f"Processing {symbol}")
 
-        prices = get_last_200_days_prices(symbol)
-
-        if len(prices) < 200:
-            msg = f"{symbol}: Not enough data"
+        prices = get_last_n_days_prices(symbol, n=500)
+        if not prices:
+            msg = f"{symbol}: No price data"
             print(msg)
             logging.warning(msg)
             continue
 
         price_data[symbol] = prices
 
-        short_ma = moving_average(prices, 50)
-        long_ma = moving_average(prices, 200)
+        short_window = min(50, len(prices))
+        long_window = min(200, len(prices))
+
+        short_ma = moving_average(prices, short_window)
+        long_ma = moving_average(prices, long_window)
         momentum = short_ma - long_ma
 
-        print(f"{symbol} -> Short MA: {short_ma:.2f}, Long MA: {long_ma:.2f}, Momentum: {momentum:.2f}")
+        print(f"{symbol} -> Short MA({short_window}): {short_ma:.2f}, Long MA({long_window}): {long_ma:.2f}, Momentum: {momentum:.2f}")
         logging.info(f"{symbol} metrics | short={short_ma:.2f}, long={long_ma:.2f}, momentum={momentum:.2f}")
 
         bst.insert(symbol, momentum)
 
-    # STEP 5: SORT
+    # STEP 5: SORT STOCKS BY MOMENTUM
     sorted_stocks = bst.get_descending()
     print("\nRanked Stocks (by momentum):", sorted_stocks)
     logging.info(f"Sorted stocks: {sorted_stocks}")
@@ -138,32 +137,27 @@ def run_bot():
             continue
 
         prices = price_data.get(symbol, [])
-        if len(prices) < 200:
+        if not prices:
             continue
 
-        short_ma = moving_average(prices, 50)
-        long_ma = moving_average(prices, 200)
+        short_window = min(50, len(prices))
+        long_window = min(200, len(prices))
 
-        prev_short_ma = sum(prices[-51:-1]) / 50
-        prev_long_ma = sum(prices[-201:-1]) / 200
+        short_ma = moving_average(prices, short_window)
+        long_ma = moving_average(prices, long_window)
+        prev_short_ma = moving_average(prices[:-1], short_window)
+        prev_long_ma = moving_average(prices[:-1], long_window)
 
         print(f"{symbol} Prev Short: {prev_short_ma:.2f}, Prev Long: {prev_long_ma:.2f}")
         print(f"{symbol} Curr Short: {short_ma:.2f}, Curr Long: {long_ma:.2f}")
 
-        # BUY
+        # BUY SIGNAL
         if prev_short_ma <= prev_long_ma and short_ma > long_ma and shares == 0:
-            print(f"{symbol}: BUY SIGNAL TRIGGERED 🚀")
+            print(f"{symbol}: BUY SIGNAL 🚀")
             logging.info(f"{symbol}: BUY signal")
-
             if sum(portfolio.values()) + 50 <= MAX_SHARES:
                 try:
-                    api.submit_order(
-                        symbol=symbol,
-                        qty=50,
-                        side="buy",
-                        type="market",
-                        time_in_force="gtc"
-                    )
+                    api.submit_order(symbol=symbol, qty=50, side="buy", type="market", time_in_force="gtc")
                     portfolio[symbol] = 50
                     last_trade_time[symbol] = current_time
                     print(f"{symbol}: EXECUTED BUY")
@@ -172,19 +166,12 @@ def run_bot():
                     print(f"{symbol}: Buy failed - {e}")
                     logging.error(f"{symbol}: Buy failed - {e}")
 
-        # SELL
+        # SELL SIGNAL
         elif prev_short_ma >= prev_long_ma and short_ma < long_ma and shares > 0:
-            print(f"{symbol}: SELL SIGNAL TRIGGERED 🔻")
+            print(f"{symbol}: SELL SIGNAL 🔻")
             logging.info(f"{symbol}: SELL signal")
-
             try:
-                api.submit_order(
-                    symbol=symbol,
-                    qty=shares,
-                    side="sell",
-                    type="market",
-                    time_in_force="gtc"
-                )
+                api.submit_order(symbol=symbol, qty=shares, side="sell", type="market", time_in_force="gtc")
                 portfolio[symbol] = 0
                 last_trade_time[symbol] = current_time
                 print(f"{symbol}: EXECUTED SELL")
@@ -192,21 +179,17 @@ def run_bot():
             except Exception as e:
                 print(f"{symbol}: Sell failed - {e}")
                 logging.error(f"{symbol}: Sell failed - {e}")
-
         else:
-            print(f"{symbol}: HOLD (no crossover)")
+            print(f"{symbol}: HOLD")
             logging.info(f"{symbol}: HOLD")
 
     # STEP 7: SUMMARY
     total_shares = sum(portfolio.values())
-
     print("\n--- FINAL SUMMARY ---")
     print("Portfolio:", portfolio)
     print("Total Shares:", total_shares)
-
     logging.info(f"Final Portfolio: {portfolio}")
     logging.info(f"Total Shares: {total_shares}")
-
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":

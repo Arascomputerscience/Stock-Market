@@ -1,7 +1,3 @@
-if __name__ == "__main__":
-    print("Starting Trading Bot...\n")
-    run_bot()
-
 import os
 import alpaca_trade_api as tradeapi
 import pandas as pd
@@ -168,4 +164,5 @@ def run_bot():
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
+    print("Starting Trading Bot...\n")
     run_bot()
